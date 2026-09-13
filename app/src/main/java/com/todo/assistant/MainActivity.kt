@@ -121,7 +121,7 @@ class MainActivity : ComponentActivity() {
             LlmInference.LlmInferenceOptions
                 .builder()
                 .setModelPath(file.absolutePath)
-                .setMaxTokens(1024)
+                .setMaxTokens(2048)
                 .build()
 
         llm =

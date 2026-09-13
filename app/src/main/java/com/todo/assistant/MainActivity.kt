@@ -408,9 +408,11 @@ TODO:
             mutableStateOf(false)
         }
 
-        var drawerOpen by remember {
-            mutableStateOf(false)
-        }
+        val drawerState = rememberDrawerState(
+    initialValue = DrawerValue.Closed
+)
+
+val scope = rememberCoroutineScope()
 
         val listState =
             rememberLazyListState()
@@ -430,15 +432,7 @@ TODO:
         ) {
 
             ModalNavigationDrawer(
-
-                drawerState =
-                    rememberDrawerState(
-                        if (drawerOpen)
-                            DrawerValue.Open
-                        else
-                            DrawerValue.Closed
-                    ),
-
+    drawerState = drawerstate 
                 drawerContent = {
 
                     ModalDrawerSheet {
@@ -498,7 +492,9 @@ TODO:
 
                                 input = ""
                                 thinking = false
-                                drawerOpen = false
+                                scope.launch {
+    drawerState.close()
+                                }
 
                                 createSession()
                             }
@@ -549,7 +545,9 @@ TODO:
                                             messages =
                                                 chat.messages
 
-                                            drawerOpen = false
+                                            scope.launch {
+    drawerState.close()
+                                            }
 
                                             createSession()
 

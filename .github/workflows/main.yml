@@ -17,7 +17,7 @@ jobs:
       - name: Extract TODO ZIP
         run: |
           unzip -o TODO_v0_1.zip -d extracted
-          cp -r extracted/TODO_v0_1/. .
+          cp -r extracted/. .
           rm -rf extracted TODO_v0_1.zip
 
       - name: Commit extracted project

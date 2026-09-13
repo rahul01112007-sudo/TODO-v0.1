@@ -121,7 +121,7 @@ class MainActivity : ComponentActivity() {
             LlmInference.LlmInferenceOptions
                 .builder()
                 .setModelPath(file.absolutePath)
-                .setMaxTokens(128)
+                .setMaxTokens(1024)
                 .build()
 
         llm =
@@ -190,10 +190,21 @@ User: $userMessage
 TODO:
 """.trimIndent()
 
-                activeSession.addQueryChunk(prompt)
+                val fullPrompt = """
+You are TODO, a helpful offline AI assistant.
+Answer the user's question completely and clearly.
+Do not stop in the middle of a sentence.
+Use simple language.
+If the user asks "how to", give step-by-step instructions.
 
-                val answer =
-                    activeSession.generateResponse()
+User: $prompt
+Assistant:
+""".trimIndent()
+
+activeSession.addQueryChunk(fullPrompt)
+
+val answer =
+    activeSession.generateResponse()
 
                 val cleanAnswer =
                     answer.trim()

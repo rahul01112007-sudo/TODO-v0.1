@@ -643,4 +643,260 @@ TODO:
 
                                 Text(
                                     if (modelReady)
-                                    
+                                                                        "LOCAL AI • READY"
+                                else
+                                    "LOCAL AI • MODEL REQUIRED",
+                                style = MaterialTheme.typography.titleMedium
+                            )
+                        }
+
+                        Spacer(Modifier.height(10.dp))
+
+                        if (!modelReady) {
+                            Button(
+                                modifier = Modifier.fillMaxWidth(),
+                                onClick = {
+                                    modelPicker.launch(
+                                        arrayOf(
+                                            "application/octet-stream",
+                                            "*/*"
+                                        )
+                                    )
+                                }
+                            ) {
+                                Text("Install Local AI Model")
+                            }
+
+                            Spacer(Modifier.height(6.dp))
+                            Text("Sirf compatible .task model select karo.")
+                        }
+
+                        if (modelError.isNotEmpty()) {
+                            Spacer(Modifier.height(8.dp))
+                            Text(
+                                text = modelError,
+                                color = MaterialTheme.colorScheme.error
+                            )
+                        }
+
+                        Spacer(Modifier.height(10.dp))
+
+                        LazyColumn(
+                            state = listState,
+                            modifier = Modifier.weight(1f),
+                            verticalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            itemsIndexed(messages) { _, message ->
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement =
+                                        if (message.fromUser)
+                                            Arrangement.End
+                                        else
+                                            Arrangement.Start
+                                ) {
+                                    Surface(
+                                        modifier = Modifier.widthIn(max = 340.dp),
+                                        shape = RoundedCornerShape(
+                                            topStart = 20.dp,
+                                            topEnd = 20.dp,
+                                            bottomStart =
+                                                if (message.fromUser) 20.dp else 5.dp,
+                                            bottomEnd =
+                                                if (message.fromUser) 5.dp else 20.dp
+                                        ),
+                                        color =
+                                            if (message.fromUser)
+                                                MaterialTheme.colorScheme.primaryContainer
+                                            else
+                                                MaterialTheme.colorScheme.surfaceVariant
+                                    ) {
+                                        Column(
+                                            Modifier.padding(14.dp)
+                                        ) {
+                                            Row(
+                                                verticalAlignment =
+                                                    Alignment.CenterVertically
+                                            ) {
+                                                Text(
+                                                    if (message.fromUser)
+                                                        "You"
+                                                    else
+                                                        "TODO • AI",
+                                                    fontSize = 11.sp,
+                                                    fontWeight = FontWeight.Bold
+                                                )
+
+                                                if (!message.fromUser) {
+                                                    Spacer(Modifier.weight(1f))
+
+                                                    val clipboard =
+                                                        LocalClipboardManager.current
+
+                                                    TextButton(
+                                                        onClick = {
+                                                            clipboard.setText(
+                                                                androidx.compose.ui.text.AnnotatedString(
+                                                                    message.text
+                                                                )
+                                                            )
+                                                        },
+                                                        contentPadding =
+                                                            PaddingValues(
+                                                                horizontal = 6.dp
+                                                            )
+                                                    ) {
+                                                        Text("Copy")
+                                                    }
+                                                }
+                                            }
+
+                                            Spacer(Modifier.height(5.dp))
+
+                                            Text(
+                                                text = message.text,
+                                                fontSize = 16.sp,
+                                                lineHeight = 23.sp
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+
+                            if (thinking) {
+                                item {
+                                    Surface(
+                                        shape = RoundedCornerShape(18.dp),
+                                        color =
+                                            MaterialTheme.colorScheme.surfaceVariant
+                                    ) {
+                                        Text(
+                                            "TODO is thinking…",
+                                            modifier = Modifier.padding(
+                                                horizontal = 16.dp,
+                                                vertical = 12.dp
+                                            )
+                                        )
+                                    }
+                                }
+                            }
+                        }
+
+                        Spacer(Modifier.height(8.dp))
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.Bottom
+                        ) {
+                            OutlinedTextField(
+                                value = input,
+                                onValueChange = { input = it },
+                                modifier = Modifier.weight(1f),
+                                placeholder = {
+                                    Text("Message TODO…")
+                                },
+                                maxLines = 5
+                            )
+
+                            Spacer(Modifier.width(8.dp))
+
+                            Button(
+                                enabled =
+                                    input.trim().isNotEmpty() &&
+                                    modelReady &&
+                                    !thinking,
+
+                                onClick = {
+                                    val question = input.trim()
+
+                                    if (question.isEmpty())
+                                        return@Button
+
+                                    val updatedMessages =
+                                        messages + Message(
+                                            question,
+                                            true
+                                        )
+
+                                    input = ""
+                                    messages = updatedMessages
+                                    thinking = true
+
+                                    val chatId =
+                                        currentChatId
+                                            ?: System.currentTimeMillis()
+
+                                    currentChatId = chatId
+
+                                    val title =
+                                        question
+                                            .replace("\n", " ")
+                                            .trim()
+                                            .take(32)
+                                            .ifEmpty {
+                                                "New Chat"
+                                            }
+
+                                    askAI(
+                                        question,
+                                        updatedMessages
+                                    ) { answer ->
+
+                                        val finalMessages =
+                                            updatedMessages +
+                                                    Message(
+                                                        answer,
+                                                        false
+                                                    )
+
+                                        messages = finalMessages
+                                        thinking = false
+
+                                        val updatedChats =
+                                            if (chats.any {
+                                                    it.id == chatId
+                                                }) {
+                                                chats.map {
+                                                    if (it.id == chatId) {
+                                                        ChatItem(
+                                                            chatId,
+                                                            title,
+                                                            finalMessages
+                                                        )
+                                                    } else {
+                                                        it
+                                                    }
+                                                }
+                                            } else {
+                                                chats +
+                                                        ChatItem(
+                                                            chatId,
+                                                            title,
+                                                            finalMessages
+                                                        )
+                                            }
+
+                                        chats = updatedChats
+                                        saveChats(updatedChats)
+                                    }
+                                }
+                            ) {
+                                Text("Send")
+                            }
+                        }
+                    }
+                }
+            )
+        }
+    }
+
+    override fun onDestroy() {
+        session?.close()
+        session = null
+
+        llm?.close()
+        llm = null
+
+        super.onDestroy()
+    }
+        }

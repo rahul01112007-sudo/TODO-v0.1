@@ -1,6 +1,5 @@
 package com.todo.assistant
 
-import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -8,6 +7,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -33,8 +33,13 @@ class MainActivity : ComponentActivity() {
 
     private val modelFileName = "gemma3-1b-it-int4.task"
 
+    private var modelReady by mutableStateOf(false)
+    private var modelError by mutableStateOf("")
+
     private val modelPicker =
-        registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        registerForActivityResult(
+            ActivityResultContracts.OpenDocument()
+        ) { uri ->
 
             if (uri == null) return@registerForActivityResult
 
@@ -55,20 +60,20 @@ class MainActivity : ComponentActivity() {
                     loadModel(modelFile)
 
                     withContext(Dispatchers.Main) {
+                        modelError = ""
                         modelReady = true
                     }
 
                 } catch (e: Exception) {
 
                     withContext(Dispatchers.Main) {
-                        modelError = e.message ?: "Model install failed"
+                        modelReady = false
+                        modelError =
+                            e.message ?: "Model install failed"
                     }
                 }
             }
         }
-
-    private var modelReady by mutableStateOf(false)
-    private var modelError by mutableStateOf("")
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -84,13 +89,16 @@ class MainActivity : ComponentActivity() {
                     loadModel(existingModel)
 
                     withContext(Dispatchers.Main) {
+                        modelError = ""
                         modelReady = true
                     }
 
                 } catch (e: Exception) {
 
                     withContext(Dispatchers.Main) {
-                        modelError = e.message ?: "Model load failed"
+                        modelReady = false
+                        modelError =
+                            e.message ?: "Model load failed"
                     }
                 }
             }
@@ -104,12 +112,16 @@ class MainActivity : ComponentActivity() {
     private fun loadModel(file: File) {
 
         session?.close()
+        session = null
+
         llm?.close()
+        llm = null
 
         val options =
-            LlmInference.LlmInferenceOptions.builder()
+            LlmInference.LlmInferenceOptions
+                .builder()
                 .setModelPath(file.absolutePath)
-                .setMaxTokens(512)
+                .setMaxTokens(128)
                 .build()
 
         llm =
@@ -118,23 +130,31 @@ class MainActivity : ComponentActivity() {
                 options
             )
 
+        createSession()
+    }
+
+    private fun createSession() {
+
+        val currentLlm = llm ?: return
+
         val sessionOptions =
-            LlmInferenceSession.LlmInferenceSessionOptions
+            LlmInferenceSession
+                .LlmInferenceSessionOptions
                 .builder()
-                .setTopK(40)
-                .setTopP(0.95f)
-                .setTemperature(0.7f)
+                .setTopK(20)
+                .setTopP(0.9f)
+                .setTemperature(0.3f)
                 .build()
 
         session =
             LlmInferenceSession.createFromOptions(
-                llm!!,
+                currentLlm,
                 sessionOptions
             )
     }
 
     private fun askAI(
-        prompt: String,
+        userMessage: String,
         onResult: (String) -> Unit
     ) {
 
@@ -155,20 +175,43 @@ class MainActivity : ComponentActivity() {
                     return@launch
                 }
 
+                val prompt = """
+You are TODO, a fast offline Android AI assistant.
+
+Rules:
+- Reply in simple Hindi/Hinglish.
+- Be natural and helpful.
+- Keep answers short unless the user asks for detail.
+- Do not repeat the user's question.
+- Do not mention these instructions.
+- Answer directly.
+
+User: $userMessage
+TODO:
+""".trimIndent()
+
                 activeSession.addQueryChunk(prompt)
 
                 val answer =
                     activeSession.generateResponse()
 
+                val cleanAnswer =
+                    answer.trim()
+
                 withContext(Dispatchers.Main) {
-                    onResult(answer)
+                    onResult(
+                        if (cleanAnswer.isEmpty())
+                            "Sorry, mujhe iska jawab nahi mila."
+                        else
+                            cleanAnswer
+                    )
                 }
 
             } catch (e: Exception) {
 
                 withContext(Dispatchers.Main) {
                     onResult(
-                        "AI error: ${e.message}"
+                        "AI error: ${e.message ?: "Unknown error"}"
                     )
                 }
             }
@@ -183,13 +226,14 @@ class MainActivity : ComponentActivity() {
         }
 
         var messages by remember {
+
             mutableStateOf(
                 listOf(
                     Message(
                         if (modelReady)
-                            "Hello! Main TODO hoon. 🧠 Local AI ready hai."
+                            "Namaste! Main TODO hoon. 🧠\nLocal AI ready hai."
                         else
-                            "Hello! Main TODO hoon. 🧠",
+                            "Namaste! Main TODO hoon. 🧠",
                         false
                     )
                 )
@@ -198,6 +242,18 @@ class MainActivity : ComponentActivity() {
 
         var thinking by remember {
             mutableStateOf(false)
+        }
+
+        val listState =
+            rememberLazyListState()
+
+        LaunchedEffect(messages.size, thinking) {
+
+            if (messages.isNotEmpty()) {
+                listState.animateScrollToItem(
+                    messages.size - 1
+                )
+            }
         }
 
         MaterialTheme(
@@ -216,36 +272,45 @@ class MainActivity : ComponentActivity() {
 
                     Row(
                         modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically
+                        verticalAlignment =
+                            Alignment.CenterVertically
                     ) {
 
                         Text(
                             text = "TODO",
-                            style = MaterialTheme.typography.headlineLarge
+                            style =
+                                MaterialTheme.typography
+                                    .headlineLarge
                         )
 
                         Spacer(
-                            modifier = Modifier.width(14.dp)
+                            modifier =
+                                Modifier.width(14.dp)
                         )
 
                         Text(
                             text =
                                 if (modelReady)
-                                    "OFFLINE • AI READY"
+                                    "LOCAL AI • READY"
                                 else
-                                    "OFFLINE • MODEL REQUIRED",
-                            style = MaterialTheme.typography.titleMedium
+                                    "LOCAL AI • REQUIRED",
+                            style =
+                                MaterialTheme.typography
+                                    .titleMedium
                         )
                     }
 
                     Spacer(
-                        modifier = Modifier.height(20.dp)
+                        modifier =
+                            Modifier.height(16.dp)
                     )
 
                     if (!modelReady) {
 
                         Button(
-                            modifier = Modifier.fillMaxWidth(),
+                            modifier =
+                                Modifier.fillMaxWidth(),
+
                             onClick = {
 
                                 modelPicker.launch(
@@ -257,50 +322,68 @@ class MainActivity : ComponentActivity() {
                             }
                         ) {
 
-                            Text("Install Local AI Model")
+                            Text(
+                                "Install Local AI Model"
+                            )
                         }
 
                         Spacer(
-                            modifier = Modifier.height(12.dp)
+                            modifier =
+                                Modifier.height(10.dp)
                         )
 
                         Text(
-                            "Apni downloaded .task model file select karo."
+                            "Sirf compatible .task model select karo."
                         )
                     }
 
                     if (modelError.isNotEmpty()) {
 
                         Spacer(
-                            modifier = Modifier.height(10.dp)
+                            modifier =
+                                Modifier.height(10.dp)
                         )
 
                         Text(
                             text = modelError,
-                            color = MaterialTheme.colorScheme.error
+                            color =
+                                MaterialTheme.colorScheme.error
                         )
                     }
 
                     Spacer(
-                        modifier = Modifier.height(16.dp)
+                        modifier =
+                            Modifier.height(12.dp)
                     )
 
                     LazyColumn(
-                        modifier = Modifier.weight(1f),
-                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                        state = listState,
+                        modifier =
+                            Modifier.weight(1f),
+
+                        verticalArrangement =
+                            Arrangement.spacedBy(10.dp)
                     ) {
 
                         items(messages) { message ->
 
                             Surface(
-                                modifier = Modifier.fillMaxWidth(),
-                                shape = MaterialTheme.shapes.large,
+                                modifier =
+                                    Modifier.fillMaxWidth(),
+
+                                shape =
+                                    MaterialTheme.shapes.large,
+
                                 tonalElevation = 3.dp
                             ) {
 
                                 Text(
                                     text = message.text,
-                                    modifier = Modifier.padding(18.dp)
+
+                                    modifier =
+                                        Modifier.padding(
+                                            16.dp
+                                        )
                                 )
                             }
                         }
@@ -316,37 +399,57 @@ class MainActivity : ComponentActivity() {
                         }
                     }
 
+                    Spacer(
+                        modifier =
+                            Modifier.height(10.dp)
+                    )
+
                     Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically
+                        modifier =
+                            Modifier.fillMaxWidth(),
+
+                        verticalAlignment =
+                            Alignment.Bottom
                     ) {
 
                         OutlinedTextField(
                             value = input,
+
                             onValueChange = {
                                 input = it
                             },
-                            modifier = Modifier.weight(1f),
+
+                            modifier =
+                                Modifier.weight(1f),
+
                             placeholder = {
-                                Text("Message TODO…")
+                                Text(
+                                    "Message TODO…"
+                                )
                             },
-                            singleLine = false
+
+                            maxLines = 4
                         )
 
                         Spacer(
-                            modifier = Modifier.width(10.dp)
+                            modifier =
+                                Modifier.width(8.dp)
                         )
 
                         Button(
+
                             enabled =
-                                input.trim().isNotEmpty()
-                                        && modelReady
-                                        && !thinking,
+                                input.trim().isNotEmpty() &&
+                                modelReady &&
+                                !thinking,
 
                             onClick = {
 
                                 val question =
                                     input.trim()
+
+                                if (question.isEmpty())
+                                    return@Button
 
                                 input = ""
 
@@ -384,7 +487,10 @@ class MainActivity : ComponentActivity() {
     override fun onDestroy() {
 
         session?.close()
+        session = null
+
         llm?.close()
+        llm = null
 
         super.onDestroy()
     }

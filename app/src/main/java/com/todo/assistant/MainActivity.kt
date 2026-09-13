@@ -1,25 +1,28 @@
 package com.todo.assistant
 
+import android.content.Context
+import android.net.Uri
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
-import kotlin.math.*
+import com.google.mediapipe.tasks.genai.llminference.LlmInference
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import java.io.File
 
 data class Message(
     val text: String,
@@ -31,486 +34,258 @@ class TodoViewModel : ViewModel() {
     var messages by mutableStateOf(
         listOf(
             Message(
-                "Hello! Main TODO hoon. 🧠\nMain abhi 100% offline mode mein hoon.",
+                "Hello! Main TODO hoon. 🧠",
                 true
             ),
             Message(
-                "Tum mujhse normal commands try kar sakte ho, jaise: \"time kya hai\", \"date batao\", \"2 + 5\" ya \"tum kaun ho\".",
+                "Pehle ek Local AI model install karo. Uske baad main bina Internet/API ke jawab generate karunga.",
                 true
             )
         )
     )
         private set
 
+    var modelInstalled by mutableStateOf(false)
+        private set
+
+    var generating by mutableStateOf(false)
+        private set
+
+    private var llm: LlmInference? = null
+
+    fun installModel(context: Context, uri: Uri) {
+
+        viewModelScope.launch {
+
+            try {
+
+                val modelFile = File(
+                    context.filesDir,
+                    "todo_model.task"
+                )
+
+                withContext(Dispatchers.IO) {
+
+                    context.contentResolver
+                        .openInputStream(uri)
+                        ?.use { input ->
+
+                            modelFile.outputStream().use { output ->
+                                input.copyTo(output)
+                            }
+                        }
+                        ?: throw Exception("Model file read nahi ho saki.")
+                }
+
+                initializeModel(context, modelFile)
+
+            } catch (e: Exception) {
+
+                messages = messages + Message(
+                    "Model install nahi ho saka.\n\nError: ${e.message}",
+                    true
+                )
+            }
+        }
+    }
+
+    private suspend fun initializeModel(
+        context: Context,
+        modelFile: File
+    ) {
+
+        withContext(Dispatchers.IO) {
+
+            val options =
+                LlmInference.LlmInferenceOptions.builder()
+                    .setModelPath(modelFile.absolutePath)
+                    .setMaxTokens(512)
+                    .build()
+
+            llm = LlmInference.createFromOptions(
+                context,
+                options
+            )
+        }
+
+        modelInstalled = true
+
+        messages = messages + Message(
+            "✅ Local AI model ready hai!\n\nAb tum normal language mein mujhse baat kar sakte ho. Internet ki zarurat nahi.",
+            true
+        )
+    }
+
     fun send(text: String) {
 
         val clean = text.trim()
 
-        if (clean.isEmpty()) return
+        if (clean.isEmpty() || generating) return
 
-        messages = messages + Message(clean, false)
+        messages = messages + Message(
+            clean,
+            false
+        )
 
-        val reply = processCommand(clean)
+        if (llm == null) {
 
-        messages = messages + Message(reply, true)
+            messages = messages + Message(
+                "Pehle \"Install Local AI Model\" se ek compatible .task model install karo.",
+                true
+            )
+
+            return
+        }
+
+        generating = true
+
+        viewModelScope.launch {
+
+            try {
+
+                val prompt = buildPrompt(clean)
+
+                val answer = withContext(Dispatchers.Default) {
+
+                    llm!!.generateResponse(prompt)
+                }
+
+                messages = messages + Message(
+                    answer,
+                    true
+                )
+
+            } catch (e: Exception) {
+
+                messages = messages + Message(
+                    "AI response generate nahi ho saka.\n\nError: ${e.message}",
+                    true
+                )
+
+            } finally {
+
+                generating = false
+            }
+        }
     }
 
-    private fun processCommand(input: String): String {
+    private fun buildPrompt(userMessage: String): String {
 
-        val text = input
-            .trim()
-            .lowercase(Locale.getDefault())
+        val history = messages
+            .takeLast(10)
+            .joinToString("\n") {
 
-        // -----------------------------
-        // GREETINGS
-        // -----------------------------
-
-        if (
-            text == "hi" ||
-            text == "hello" ||
-            text == "hey" ||
-            text == "hii" ||
-            text == "namaste" ||
-            text == "नमस्ते"
-        ) {
-            return listOf(
-                "Hello! 👋 Kaise ho?",
-                "Hi! 👋 TODO yahin hai.",
-                "Hello! Batao kya karna hai?",
-                "Namaste! 🙏 Main ready hoon."
-            ).random()
-        }
-
-        // -----------------------------
-        // IDENTITY
-        // -----------------------------
-
-        if (
-            text.contains("tum kaun") ||
-            text.contains("who are you") ||
-            text.contains("your name") ||
-            text.contains("naam kya")
-        ) {
-            return "Main TODO hoon — tumhara private offline assistant. 🤖\nMere current version mein kisi cloud AI API ka use nahi ho raha."
-        }
-
-        // -----------------------------
-        // OFFLINE
-        // -----------------------------
-
-        if (
-            text.contains("offline") ||
-            text.contains("internet ke bina") ||
-            text.contains("bina internet")
-        ) {
-            return "Haan. Main offline-first design par bana hoon. 📱\nCurrent version mein response generate karne ke liye Internet ya AI API ki zarurat nahi hai."
-        }
-
-        // -----------------------------
-        // TIME
-        // -----------------------------
-
-        if (
-            text.contains("time") ||
-            text.contains("samay") ||
-            text.contains("kitne baje")
-        ) {
-            val time = SimpleDateFormat(
-                "hh:mm a",
-                Locale.getDefault()
-            ).format(Date())
-
-            return "Abhi time hai $time ⏰"
-        }
-
-        // -----------------------------
-        // DATE
-        // -----------------------------
-
-        if (
-            text.contains("date") ||
-            text.contains("tarikh") ||
-            text.contains("aaj ki date") ||
-            text.contains("today")
-        ) {
-            val date = SimpleDateFormat(
-                "dd MMMM yyyy",
-                Locale.getDefault()
-            ).format(Date())
-
-            return "Aaj ki date hai $date 📅"
-        }
-
-        // -----------------------------
-        // DAY
-        // -----------------------------
-
-        if (
-            text.contains("kaunsa din") ||
-            text.contains("which day") ||
-            text.contains("day today")
-        ) {
-            val day = SimpleDateFormat(
-                "EEEE",
-                Locale.getDefault()
-            ).format(Date())
-
-            return "Aaj $day hai. 📅"
-        }
-
-        // -----------------------------
-        // CALCULATOR
-        // -----------------------------
-
-        val calculation = calculate(text)
-
-        if (calculation != null) {
-            return "Answer: $calculation 🧮"
-        }
-
-        // -----------------------------
-        // HELP
-        // -----------------------------
-
-        if (
-            text == "help" ||
-            text.contains("kya kar sakte ho") ||
-            text.contains("kya kya kar")
-        ) {
-            return """
-Abhi main ye offline commands samajh sakta hoon:
-
-• Hi / Hello
-• Tum kaun ho?
-• Time kya hai?
-• Aaj ki date batao
-• Aaj kaunsa din hai?
-• Simple calculation: 25 + 30
-• Offline mode
-• Help
-
-Aage hum ismein Notes, Tasks, Reminder, Calculator aur phone ke local tools add karenge.
-""".trimIndent()
-        }
-
-        // -----------------------------
-        // THANK YOU
-        // -----------------------------
-
-        if (
-            text.contains("thank") ||
-            text.contains("thanks") ||
-            text.contains("shukriya")
-        ) {
-            return listOf(
-                "You're welcome! 😊",
-                "Koi baat nahi! 👍",
-                "Hamesha! 😄"
-            ).random()
-        }
-
-        // -----------------------------
-        // SIMPLE EMOTION / CHAT
-        // -----------------------------
-
-        if (
-            text.contains("kaise ho") ||
-            text.contains("how are you")
-        ) {
-            return "Main bilkul ready hoon! 😄 Tum batao?"
-        }
-
-        if (
-            text.contains("good morning")
-        ) {
-            return "Good morning! ☀️ Aaj kya karna hai?"
-        }
-
-        if (
-            text.contains("good night")
-        ) {
-            return "Good night! 🌙"
-        }
-
-        // -----------------------------
-        // UNKNOWN COMMAND
-        // -----------------------------
+                if (it.fromTodo) {
+                    "TODO: ${it.text}"
+                } else {
+                    "User: ${it.text}"
+                }
+            }
 
         return """
-Maine tumhari command samajhne ki koshish ki:
+You are TODO, a helpful private offline Android assistant.
 
-"$input"
+Rules:
+- Answer naturally.
+- Be concise but useful.
+- You are running completely locally on the phone.
+- Do not claim to have Internet access.
+- Do not invent phone capabilities.
+- Understand Hindi, Hinglish and English when possible.
 
-Is command ka offline skill abhi mere andar add nahi hai.
+Conversation:
+$history
 
-Hum TODO ko step-by-step aur powerful banayenge — bina kisi AI API ke.
+User:
+$userMessage
+
+TODO:
 """.trimIndent()
     }
 
-    // ==========================================
-    // LOCAL CALCULATOR
-    // ==========================================
+    fun checkExistingModel(context: Context) {
 
-    private fun calculate(input: String): String? {
+        viewModelScope.launch {
 
-        var expression = input
-
-        expression = expression
-            .replace("calculate", "")
-            .replace("calc", "")
-            .replace("what is", "")
-            .replace("kitna", "")
-            .replace("=?", "")
-            .replace("=", "")
-            .trim()
-
-        // Hindi/common operators
-        expression = expression
-            .replace("plus", "+")
-            .replace("add", "+")
-            .replace("minus", "-")
-            .replace("subtract", "-")
-            .replace("multiply", "*")
-            .replace("×", "*")
-            .replace("into", "*")
-            .replace("divide", "/")
-            .replace("÷", "/")
-
-        // Only allow calculator characters
-        if (!expression.matches(
-                Regex("""[0-9+\-*/().%\s]+""")
+            val modelFile = File(
+                context.filesDir,
+                "todo_model.task"
             )
-        ) {
-            return null
-        }
 
-        if (
-            !expression.any { it.isDigit() } ||
-            !expression.any { "+-*/%".contains(it) }
-        ) {
-            return null
-        }
+            if (modelFile.exists()) {
 
-        return try {
-            val result = SimpleExpressionParser(expression).parse()
-
-            if (result.isNaN() || result.isInfinite()) {
-                null
-            } else {
-                if (result % 1.0 == 0.0) {
-                    result.toLong().toString()
-                } else {
-                    "%.4f".format(Locale.US, result)
+                try {
+                    initializeModel(
+                        context,
+                        modelFile
+                    )
+                } catch (_: Exception) {
                 }
             }
-
-        } catch (_: Exception) {
-            null
         }
+    }
+
+    override fun onCleared() {
+
+        llm = null
+
+        super.onCleared()
     }
 }
-
-// ==========================================
-// SMALL LOCAL MATH PARSER
-// ==========================================
-
-class SimpleExpressionParser(
-    private val expression: String
-) {
-
-    private var position = 0
-
-    fun parse(): Double {
-
-        val result = parseExpression()
-
-        skipSpaces()
-
-        if (position != expression.length) {
-            throw IllegalArgumentException("Invalid expression")
-        }
-
-        return result
-    }
-
-    private fun parseExpression(): Double {
-
-        var result = parseTerm()
-
-        while (true) {
-
-            skipSpaces()
-
-            if (match('+')) {
-                result += parseTerm()
-
-            } else if (match('-')) {
-                result -= parseTerm()
-
-            } else {
-                return result
-            }
-        }
-    }
-
-    private fun parseTerm(): Double {
-
-        var result = parseFactor()
-
-        while (true) {
-
-            skipSpaces()
-
-            if (match('*')) {
-                result *= parseFactor()
-
-            } else if (match('/')) {
-
-                val divisor = parseFactor()
-
-                if (divisor == 0.0) {
-                    throw ArithmeticException("Division by zero")
-                }
-
-                result /= divisor
-
-            } else if (match('%')) {
-
-                val divisor = parseFactor()
-
-                if (divisor == 0.0) {
-                    throw ArithmeticException("Division by zero")
-                }
-
-                result %= divisor
-
-            } else {
-                return result
-            }
-        }
-    }
-
-    private fun parseFactor(): Double {
-
-        skipSpaces()
-
-        if (match('+')) {
-            return parseFactor()
-        }
-
-        if (match('-')) {
-            return -parseFactor()
-        }
-
-        if (match('(')) {
-
-            val result = parseExpression()
-
-            if (!match(')')) {
-                throw IllegalArgumentException("Missing )")
-            }
-
-            return result
-        }
-
-        return parseNumber()
-    }
-
-    private fun parseNumber(): Double {
-
-        skipSpaces()
-
-        val start = position
-
-        while (
-            position < expression.length &&
-            (
-                expression[position].isDigit() ||
-                expression[position] == '.'
-            )
-        ) {
-            position++
-        }
-
-        if (start == position) {
-            throw IllegalArgumentException("Number expected")
-        }
-
-        return expression.substring(
-            start,
-            position
-        ).toDouble()
-    }
-
-    private fun match(character: Char): Boolean {
-
-        skipSpaces()
-
-        if (
-            position < expression.length &&
-            expression[position] == character
-        ) {
-            position++
-            return true
-        }
-
-        return false
-    }
-
-    private fun skipSpaces() {
-
-        while (
-            position < expression.length &&
-            expression[position].isWhitespace()
-        ) {
-            position++
-        }
-    }
-}
-
-// ==========================================
-// UI
-// ==========================================
 
 @Composable
 fun TodoApp(
     vm: TodoViewModel = viewModel()
 ) {
 
+    val context = androidx.compose.ui.platform.LocalContext.current
+
     var input by remember {
         mutableStateOf("")
     }
 
+    val modelPicker =
+        rememberLauncherForActivityResult(
+            contract = ActivityResultContracts.OpenDocument()
+        ) { uri ->
+
+            if (uri != null) {
+                vm.installModel(
+                    context,
+                    uri
+                )
+            }
+        }
+
+    LaunchedEffect(Unit) {
+        vm.checkExistingModel(context)
+    }
+
     MaterialTheme(
-        colorScheme = darkColorScheme(
-            primary = Color(0xFF7C9CFF),
-            background = Color(0xFF101114),
-            surface = Color(0xFF17181D)
-        )
+        colorScheme = darkColorScheme()
     ) {
 
         Surface(
-            modifier = Modifier.fillMaxSize(),
-            color = MaterialTheme.colorScheme.background
+            modifier = Modifier.fillMaxSize()
         ) {
 
             Column(
                 modifier = Modifier.fillMaxSize()
             ) {
 
-                // HEADER
-
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(18.dp),
-                    verticalAlignment = Alignment.CenterVertically
+
+                    verticalAlignment =
+                        Alignment.CenterVertically
                 ) {
 
                     Text(
                         text = "TODO",
-                        style = MaterialTheme.typography.headlineMedium,
-                        fontWeight = FontWeight.Bold
+                        style =
+                            MaterialTheme.typography.headlineMedium
                     )
 
                     Spacer(
@@ -518,22 +293,57 @@ fun TodoApp(
                     )
 
                     Text(
-                        text = "OFFLINE • v0.1",
-                        style = MaterialTheme.typography.labelMedium
+                        text =
+                            if (vm.modelInstalled)
+                                "LOCAL AI • OFFLINE"
+                            else
+                                "OFFLINE • MODEL REQUIRED"
                     )
                 }
 
-                // CHAT
+                if (!vm.modelInstalled) {
+
+                    Button(
+                        onClick = {
+
+                            modelPicker.launch(
+                                arrayOf(
+                                    "application/octet-stream",
+                                    "application/*",
+                                    "*/*"
+                                )
+                            )
+                        },
+
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(
+                                horizontal = 14.dp
+                            )
+                    ) {
+
+                        Text(
+                            "Install Local AI Model"
+                        )
+                    }
+
+                    Text(
+                        text =
+                            "Compatible .task LLM model select karo.",
+                        modifier = Modifier.padding(
+                            horizontal = 18.dp,
+                            vertical = 6.dp
+                        )
+                    )
+                }
 
                 LazyColumn(
                     modifier = Modifier
                         .weight(1f)
                         .fillMaxWidth(),
 
-                    contentPadding = PaddingValues(
-                        horizontal = 14.dp,
-                        vertical = 8.dp
-                    ),
+                    contentPadding =
+                        PaddingValues(14.dp),
 
                     verticalArrangement =
                         Arrangement.spacedBy(10.dp)
@@ -542,7 +352,8 @@ fun TodoApp(
                     items(vm.messages) { msg ->
 
                         Row(
-                            modifier = Modifier.fillMaxWidth(),
+                            modifier =
+                                Modifier.fillMaxWidth(),
 
                             horizontalArrangement =
                                 if (msg.fromTodo)
@@ -552,32 +363,31 @@ fun TodoApp(
                         ) {
 
                             Surface(
-                                shape = RoundedCornerShape(18.dp),
+                                modifier =
+                                    Modifier.widthIn(
+                                        max = 340.dp
+                                    ),
 
                                 color =
                                     if (msg.fromTodo)
-                                        Color(0xFF1D2028)
+                                        MaterialTheme
+                                            .colorScheme
+                                            .surfaceVariant
                                     else
-                                        Color(0xFF30466F),
-
-                                modifier = Modifier.widthIn(
-                                    max = 330.dp
-                                )
+                                        MaterialTheme
+                                            .colorScheme
+                                            .primaryContainer
                             ) {
 
                                 Text(
                                     text = msg.text,
-
-                                    modifier = Modifier.padding(
-                                        14.dp
-                                    )
+                                    modifier =
+                                        Modifier.padding(14.dp)
                                 )
                             }
                         }
                     }
                 }
-
-                // INPUT
 
                 Row(
                     modifier = Modifier
@@ -598,7 +408,7 @@ fun TodoApp(
                         modifier = Modifier.weight(1f),
 
                         placeholder = {
-                            Text("Message TODO…")
+                            Text("Message TODO...")
                         },
 
                         singleLine = true
@@ -617,20 +427,23 @@ fun TodoApp(
 
                         },
 
-                        enabled = input.isNotBlank()
+                        enabled =
+                            input.isNotBlank() &&
+                            !vm.generating
                     ) {
 
-                        Text("Send")
+                        Text(
+                            if (vm.generating)
+                                "..."
+                            else
+                                "Send"
+                        )
                     }
                 }
             }
         }
     }
 }
-
-// ==========================================
-// MAIN ACTIVITY
-// ==========================================
 
 class MainActivity : ComponentActivity() {
 

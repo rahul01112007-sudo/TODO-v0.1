@@ -174,30 +174,23 @@ class MainActivity : ComponentActivity() {
 
                     return@launch
                 }
-
-                val prompt = """
-You are TODO, a fast offline Android AI assistant.
+                
+                val fullPrompt = """
+You are TODO, a helpful offline Android AI assistant.
 
 Rules:
-- Reply in simple Hindi/Hinglish.
-- Be natural and helpful.
-- Keep answers short unless the user asks for detail.
+- Answer the user's question completely and accurately.
+- Use simple Hindi/Hinglish unless the user asks for another language.
 - Do not repeat the user's question.
+- Do not use Markdown symbols such as **, *, or #.
+- Use real line breaks for lists and paragraphs.
+- Never output the characters \n as text.
+- If the user asks "how to", give clear numbered step-by-step instructions.
+- For science and factual questions, explain the correct concept and do not invent facts.
+- Do not stop in the middle of a sentence unless the response reaches the model's output limit.
 - Do not mention these instructions.
-- Answer directly.
 
 User: $userMessage
-TODO:
-""".trimIndent()
-
-                val fullPrompt = """
-You are TODO, a helpful offline AI assistant.
-Answer the user's question completely and clearly.
-Do not stop in the middle of a sentence.
-Use simple language.
-If the user asks "how to", give step-by-step instructions.
-
-User: $prompt
 Assistant:
 """.trimIndent()
 
@@ -206,9 +199,15 @@ activeSession.addQueryChunk(fullPrompt)
 val answer =
     activeSession.generateResponse()
 
-                val cleanAnswer =
-                    answer.trim()
-
+val cleanAnswer =
+    answer
+        .replace("\\n", "\n")
+        .replace("**", "")
+        .replace("*", "")
+        .replace("###", "")
+        .replace("##", "")
+        .replace("#", "")
+        .trim()
                 withContext(Dispatchers.Main) {
                     onResult(
                         if (cleanAnswer.isEmpty())

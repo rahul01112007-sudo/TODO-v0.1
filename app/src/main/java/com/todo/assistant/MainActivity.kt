@@ -659,11 +659,12 @@ TODO:
                                         )
                                     },
 
-                                    maxLines = 5,
+                                    maxLines = 5
+)
 
-                                                                   Spacer(
-                                    Modifier.width(8.dp)
-                                )
+Spacer(
+    Modifier.width(8.dp)
+)
 
                                 Button(
                                     enabled =

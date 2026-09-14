@@ -432,7 +432,7 @@ val scope = rememberCoroutineScope()
         ) {
 
             ModalNavigationDrawer(
-    drawerState = drawerstate 
+    drawerState = drawerState,
                 drawerContent = {
 
                     ModalDrawerSheet {
@@ -617,7 +617,9 @@ val scope = rememberCoroutineScope()
 
                             TextButton(
                                 onClick = {
-                                    drawerOpen = true
+    scope.launch {
+        drawerState.open()
+    }
                                 }
                             ) {
 

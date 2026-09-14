@@ -365,8 +365,9 @@ TODO:
         }
     }
 
-    @Composable
-    private fun TodoApp() {
+    @OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun TodoApp() {
 
         var chats by remember {
             mutableStateOf(loadChats())

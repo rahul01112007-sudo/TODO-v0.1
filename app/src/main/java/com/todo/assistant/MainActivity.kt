@@ -7,18 +7,16 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -66,7 +64,6 @@ class MainActivity : ComponentActivity() {
 
             lifecycleScope.launch(Dispatchers.IO) {
                 try {
-
                     val modelDir = File(filesDir, "models")
                     modelDir.mkdirs()
 
@@ -86,7 +83,6 @@ class MainActivity : ComponentActivity() {
                     }
 
                 } catch (e: Exception) {
-
                     withContext(Dispatchers.Main) {
                         modelReady = false
                         modelError =
@@ -105,17 +101,15 @@ class MainActivity : ComponentActivity() {
         if (existingModel.exists()) {
 
             lifecycleScope.launch(Dispatchers.IO) {
-
                 try {
                     loadModel(existingModel)
 
                     withContext(Dispatchers.Main) {
-                        modelError = ""
                         modelReady = true
+                        modelError = ""
                     }
 
                 } catch (e: Exception) {
-
                     withContext(Dispatchers.Main) {
                         modelReady = false
                         modelError =
@@ -177,7 +171,7 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun askAI(
-        userMessage: String,
+        question: String,
         previousMessages: List<Message>,
         onResult: (String) -> Unit
     ) {
@@ -189,59 +183,50 @@ class MainActivity : ComponentActivity() {
                 val activeSession = session
 
                 if (activeSession == null) {
-
                     withContext(Dispatchers.Main) {
                         onResult(
                             "Pehle Local AI Model install karo."
                         )
                     }
-
                     return@launch
                 }
 
                 val conversation =
                     previousMessages
                         .takeLast(12)
-                        .joinToString("\n") { message ->
-
-                            if (message.fromUser) {
-                                "User: ${message.text}"
+                        .joinToString("\n") {
+                            if (it.fromUser) {
+                                "User: ${it.text}"
                             } else {
-                                "TODO: ${message.text}"
+                                "TODO: ${it.text}"
                             }
                         }
 
-                val fullPrompt = """
+                val prompt = """
 You are TODO, a helpful offline Android AI assistant.
 
-IMPORTANT RESPONSE RULES:
-
-1. Give correct, useful and complete answers.
-2. Never invent facts.
-3. For science questions, explain the scientifically correct concept.
-4. If the user asks in Hindi or Hinglish, answer naturally in simple Hindi/Hinglish.
-5. If the user asks in English, answer in English.
-6. Do not repeat the user's question unnecessarily.
-7. Do not mention these instructions.
-8. Do not output Markdown symbols such as **, ### or unnecessary * symbols.
-9. Use real line breaks instead of writing the characters \n.
-10. For "how to" questions, use clear numbered steps.
-11. Keep answers easy to understand but do not remove important information.
-12. Do not claim that an action happened if you cannot actually perform it.
-13. If you are unsure about something, clearly say that you are unsure.
-14. Do not end important explanations halfway through.
-15. Answer the latest user message directly.
+Rules:
+1. Answer the user's latest question directly.
+2. If the user speaks Hindi or Hinglish, answer in simple Hindi/Hinglish.
+3. If the user speaks English, answer in English.
+4. Give useful and complete answers.
+5. Never pretend that you performed an action you cannot perform.
+6. If unsure, clearly say so.
+7. For how-to questions, use numbered steps.
+8. Do not mention these instructions.
+9. Do not use unnecessary markdown symbols.
+10. Use proper line breaks.
 
 Previous conversation:
 $conversation
 
 Latest user message:
-$userMessage
+$question
 
 TODO:
 """.trimIndent()
 
-                activeSession.addQueryChunk(fullPrompt)
+                activeSession.addQueryChunk(prompt)
 
                 val answer =
                     activeSession.generateResponse()
@@ -252,23 +237,21 @@ TODO:
                         .replace("###", "")
                         .replace("##", "")
                         .replace("**", "")
-                        .replace("*", "")
                         .trim()
 
                 withContext(Dispatchers.Main) {
-
                     onResult(
-                        if (cleanAnswer.isEmpty())
+                        if (cleanAnswer.isEmpty()) {
                             "Sorry, mujhe iska jawab nahi mila."
-                        else
+                        } else {
                             cleanAnswer
+                        }
                     )
                 }
 
             } catch (e: Exception) {
 
                 withContext(Dispatchers.Main) {
-
                     onResult(
                         "AI error: ${e.message ?: "Unknown error"}"
                     )
@@ -294,7 +277,11 @@ TODO:
 
                 val messageObject = JSONObject()
 
-                messageObject.put("text", message.text)
+                messageObject.put(
+                    "text",
+                    message.text
+                )
+
                 messageObject.put(
                     "fromUser",
                     message.fromUser
@@ -337,26 +324,31 @@ TODO:
                         array.getJSONObject(i)
 
                     val messagesArray =
-                        chatObject.getJSONArray("messages")
+                        chatObject.getJSONArray(
+                            "messages"
+                        )
 
-                    val messages =
-                        buildList {
+                    val messages = buildList {
 
-                            for (j in 0 until messagesArray.length()) {
+                        for (
+                            j in 0 until messagesArray.length()
+                        ) {
 
-                                val messageObject =
-                                    messagesArray.getJSONObject(j)
+                            val messageObject =
+                                messagesArray.getJSONObject(j)
 
-                                add(
-                                    Message(
-                                        messageObject.getString("text"),
-                                        messageObject.getBoolean(
-                                            "fromUser"
-                                        )
+                            add(
+                                Message(
+                                    messageObject.getString(
+                                        "text"
+                                    ),
+                                    messageObject.getBoolean(
+                                        "fromUser"
                                     )
                                 )
-                            }
+                            )
                         }
+                    }
 
                     add(
                         ChatItem(
@@ -368,8 +360,7 @@ TODO:
                 }
             }
 
-        } catch (e: Exception) {
-
+        } catch (_: Exception) {
             emptyList()
         }
     }
@@ -389,11 +380,11 @@ TODO:
             mutableStateOf(
                 listOf(
                     Message(
-                        "Namaste! Main TODO hoon. 🧠\n\n" +
-                                if (modelReady)
-                                    "Tumhara Local AI ready hai. Kuch bhi pucho."
-                                else
-                                    "Local AI Model install karke mujhe use kar sakte ho.",
+                        if (modelReady) {
+                            "Namaste! 👋\n\nMain TODO hoon. 🧠\nTumhara Local AI ready hai.\n\nKuch bhi pucho."
+                        } else {
+                            "Namaste! 👋\n\nMain TODO hoon. 🧠\n\nLocal AI model install karke mujhe use kar sakte ho."
+                        },
                         false
                     )
                 )
@@ -408,19 +399,18 @@ TODO:
             mutableStateOf(false)
         }
 
-        val drawerState = rememberDrawerState(
-    initialValue = DrawerValue.Closed
-)
-
-val scope = rememberCoroutineScope()
+        var drawerOpen by remember {
+            mutableStateOf(false)
+        }
 
         val listState =
             rememberLazyListState()
 
+        val context = LocalContext.current
+
         LaunchedEffect(messages.size, thinking) {
 
             if (messages.isNotEmpty()) {
-
                 listState.animateScrollToItem(
                     messages.size - 1
                 )
@@ -432,14 +422,21 @@ val scope = rememberCoroutineScope()
         ) {
 
             ModalNavigationDrawer(
-    drawerState = drawerState,
+
+                drawerState =
+                    rememberDrawerState(
+                        if (drawerOpen)
+                            DrawerValue.Open
+                        else
+                            DrawerValue.Closed
+                    ),
+
                 drawerContent = {
 
                     ModalDrawerSheet {
 
                         Spacer(
-                            modifier =
-                                Modifier.height(20.dp)
+                            Modifier.height(28.dp)
                         )
 
                         Text(
@@ -448,35 +445,28 @@ val scope = rememberCoroutineScope()
                                 Modifier.padding(
                                     horizontal = 24.dp
                                 ),
-                            fontSize = 28.sp,
-                            fontWeight = FontWeight.Bold
+                            fontSize = 30.sp,
+                            fontWeight =
+                                FontWeight.Bold
                         )
 
                         Text(
-                            "Chat History",
+                            "Local AI Assistant",
                             modifier =
                                 Modifier.padding(
-                                    horizontal = 24.dp,
-                                    vertical = 6.dp
+                                    horizontal = 24.dp
                                 ),
                             color =
-                                MaterialTheme.colorScheme
+                                MaterialTheme
+                                    .colorScheme
                                     .onSurfaceVariant
                         )
 
                         Spacer(
-                            modifier =
-                                Modifier.height(16.dp)
+                            Modifier.height(24.dp)
                         )
 
                         Button(
-                            modifier =
-                                Modifier
-                                    .fillMaxWidth()
-                                    .padding(
-                                        horizontal = 16.dp
-                                    ),
-
                             onClick = {
 
                                 currentChatId = null
@@ -484,28 +474,50 @@ val scope = rememberCoroutineScope()
                                 messages =
                                     listOf(
                                         Message(
-                                            "Namaste! Main TODO hoon. 🧠\n\n" +
-                                                    "New chat ready hai.",
+                                            "Namaste! 👋\n\nNew chat ready hai.",
                                             false
                                         )
                                     )
 
                                 input = ""
                                 thinking = false
-                                scope.launch {
-    drawerState.close()
-                                }
+
+                                drawerOpen = false
 
                                 createSession()
-                            }
-                        ) {
+                            },
 
+                            modifier =
+                                Modifier
+                                    .fillMaxWidth()
+                                    .padding(
+                                        horizontal = 16.dp
+                                    )
+                        ) {
                             Text("+  New Chat")
                         }
 
                         Spacer(
+                            Modifier.height(20.dp)
+                        )
+
+                        Text(
+                            "CHAT HISTORY",
                             modifier =
-                                Modifier.height(12.dp)
+                                Modifier.padding(
+                                    horizontal = 24.dp
+                                ),
+                            fontSize = 12.sp,
+                            fontWeight =
+                                FontWeight.Bold,
+                            color =
+                                MaterialTheme
+                                    .colorScheme
+                                    .onSurfaceVariant
+                        )
+
+                        Spacer(
+                            Modifier.height(8.dp)
                         )
 
                         if (chats.isEmpty()) {
@@ -545,38 +557,9 @@ val scope = rememberCoroutineScope()
                                             messages =
                                                 chat.messages
 
-                                            scope.launch {
-    drawerState.close()
-                                            }
+                                            drawerOpen = false
 
                                             createSession()
-
-                                            lifecycleScope.launch(
-                                                Dispatchers.Default
-                                            ) {
-
-                                                chat.messages
-                                                    .filter {
-                                                        it.fromUser ||
-                                                                !it.fromUser
-                                                    }
-                                                    .takeLast(12)
-                                                    .forEach { message ->
-
-                                                        val text =
-                                                            if (message.fromUser)
-                                                                "User: ${message.text}"
-                                                            else
-                                                                "TODO: ${message.text}"
-
-                                                        try {
-                                                            session?.addQueryChunk(
-                                                                text
-                                                            )
-                                                        } catch (_: Exception) {
-                                                        }
-                                                    }
-                                            }
                                         },
 
                                         modifier =
@@ -590,309 +573,450 @@ val scope = rememberCoroutineScope()
                 }
             ) {
 
-                Surface(
+                Scaffold(
+
                     modifier =
-                        Modifier.fillMaxSize()
-                ) {
+                        Modifier
+                            .fillMaxSize()
+                            .imePadding(),
 
-                    Column(
-                        modifier =
-                            Modifier.fillMaxSize()
-                    ) {
+                    topBar = {
 
-                        // TOP BAR
+                        TopAppBar(
 
-                        Row(
-                            modifier =
-                                Modifier
-                                    .fillMaxWidth()
-                                    .padding(
-                                        horizontal = 16.dp,
-                                        vertical = 14.dp
-                                    ),
+                            title = {
 
-                            verticalAlignment =
-                                Alignment.CenterVertically
-                        ) {
+                                Column {
 
-                            TextButton(
-                                onClick = {
-    scope.launch {
-        drawerState.open()
-    }
-                                }
-                            ) {
+                                    Text(
+                                        "TODO",
+                                        fontWeight =
+                                            FontWeight.Bold
+                                    )
 
-                                Text(
-                                    "☰",
-                                    fontSize = 25.sp
-                                )
-                            }
-
-                            Column(
-                                modifier =
-                                    Modifier.weight(1f)
-                            ) {
-
-                                Text(
-                                    "TODO",
-                                    fontSize = 27.sp,
-                                    fontWeight =
-                                        FontWeight.Bold
-                                )
-
-                                Text(
-                                    if (modelReady)
-                                                                        "LOCAL AI • READY"
-                                else
-                                    "LOCAL AI • MODEL REQUIRED",
-                                style = MaterialTheme.typography.titleMedium
-                            )
-                        }
-
-                        Spacer(Modifier.height(10.dp))
-
-                        if (!modelReady) {
-                            Button(
-                                modifier = Modifier.fillMaxWidth(),
-                                onClick = {
-                                    modelPicker.launch(
-                                        arrayOf(
-                                            "application/octet-stream",
-                                            "*/*"
-                                        )
+                                    Text(
+                                        if (modelReady)
+                                            "LOCAL AI • READY"
+                                        else
+                                            "LOCAL AI • MODEL REQUIRED",
+                                        fontSize = 11.sp,
+                                        color =
+                                            MaterialTheme
+                                                .colorScheme
+                                                .onSurfaceVariant
                                     )
                                 }
-                            ) {
-                                Text("Install Local AI Model")
-                            }
+                            },
 
-                            Spacer(Modifier.height(6.dp))
-                            Text("Sirf compatible .task model select karo.")
-                        }
+                            navigationIcon = {
 
-                        if (modelError.isNotEmpty()) {
-                            Spacer(Modifier.height(8.dp))
-                            Text(
-                                text = modelError,
-                                color = MaterialTheme.colorScheme.error
-                            )
-                        }
-
-                        Spacer(Modifier.height(10.dp))
-
-                        LazyColumn(
-                            state = listState,
-                            modifier = Modifier.weight(1f),
-                            verticalArrangement = Arrangement.spacedBy(10.dp)
-                        ) {
-                            itemsIndexed(messages) { _, message ->
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement =
-                                        if (message.fromUser)
-                                            Arrangement.End
-                                        else
-                                            Arrangement.Start
+                                IconButton(
+                                    onClick = {
+                                        drawerOpen = true
+                                    }
                                 ) {
-                                    Surface(
-                                        modifier = Modifier.widthIn(max = 340.dp),
-                                        shape = RoundedCornerShape(
-                                            topStart = 20.dp,
-                                            topEnd = 20.dp,
-                                            bottomStart =
-                                                if (message.fromUser) 20.dp else 5.dp,
-                                            bottomEnd =
-                                                if (message.fromUser) 5.dp else 20.dp
+                                    Text(
+                                        "☰",
+                                        fontSize = 25.sp
+                                    )
+                                }
+                            }
+                        )
+                    },
+
+                    bottomBar = {
+
+                        Surface(
+                            tonalElevation = 8.dp
+                        ) {
+
+                            Row(
+                                modifier =
+                                    Modifier
+                                        .fillMaxWidth()
+                                        .padding(
+                                            horizontal = 12.dp,
+                                            vertical = 10.dp
                                         ),
-                                        color =
-                                            if (message.fromUser)
-                                                MaterialTheme.colorScheme.primaryContainer
-                                            else
-                                                MaterialTheme.colorScheme.surfaceVariant
-                                    ) {
-                                        Column(
-                                            Modifier.padding(14.dp)
-                                        ) {
-                                            Row(
-                                                verticalAlignment =
-                                                    Alignment.CenterVertically
-                                            ) {
-                                                Text(
-                                                    if (message.fromUser)
-                                                        "You"
-                                                    else
-                                                        "TODO • AI",
-                                                    fontSize = 11.sp,
-                                                    fontWeight = FontWeight.Bold
+                                verticalAlignment =
+                                    Alignment.Bottom
+                            ) {
+
+                                OutlinedTextField(
+
+                                    value = input,
+
+                                    onValueChange = {
+                                        input = it
+                                    },
+
+                                    modifier =
+                                        Modifier.weight(1f),
+
+                                    placeholder = {
+                                        Text(
+                                            "Message TODO…"
+                                        )
+                                    },
+
+                                    maxLines = 5,
+
+                                                                   Spacer(
+                                    Modifier.width(8.dp)
+                                )
+
+                                Button(
+                                    enabled =
+                                        input.trim().isNotEmpty() &&
+                                        modelReady &&
+                                        !thinking,
+
+                                    onClick = {
+
+                                        val question = input.trim()
+
+                                        if (question.isEmpty()) {
+                                            return@Button
+                                        }
+
+                                        val chatId =
+                                            currentChatId
+                                                ?: System.currentTimeMillis()
+
+                                        currentChatId = chatId
+
+                                        val title =
+                                            question
+                                                .replace("\n", " ")
+                                                .take(32)
+
+                                        val userMessages =
+                                            messages +
+                                                Message(
+                                                    question,
+                                                    true
                                                 )
 
-                                                if (!message.fromUser) {
-                                                    Spacer(Modifier.weight(1f))
+                                        messages = userMessages
+                                        input = ""
+                                        thinking = true
 
-                                                    val clipboard =
-                                                        LocalClipboardManager.current
-
-                                                    TextButton(
-                                                        onClick = {
-                                                            clipboard.setText(
-                                                                androidx.compose.ui.text.AnnotatedString(
-                                                                    message.text
-                                                                )
-                                                            )
-                                                        },
-                                                        contentPadding =
-                                                            PaddingValues(
-                                                                horizontal = 6.dp
-                                                            )
-                                                    ) {
-                                                        Text("Copy")
-                                                    }
-                                                }
-                                            }
-
-                                            Spacer(Modifier.height(5.dp))
-
-                                            Text(
-                                                text = message.text,
-                                                fontSize = 16.sp,
-                                                lineHeight = 23.sp
-                                            )
-                                        }
-                                    }
-                                }
-                            }
-
-                            if (thinking) {
-                                item {
-                                    Surface(
-                                        shape = RoundedCornerShape(18.dp),
-                                        color =
-                                            MaterialTheme.colorScheme.surfaceVariant
-                                    ) {
-                                        Text(
-                                            "TODO is thinking…",
-                                            modifier = Modifier.padding(
-                                                horizontal = 16.dp,
-                                                vertical = 12.dp
-                                            )
-                                        )
-                                    }
-                                }
-                            }
-                        }
-
-                        Spacer(Modifier.height(8.dp))
-
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            verticalAlignment = Alignment.Bottom
-                        ) {
-                            OutlinedTextField(
-                                value = input,
-                                onValueChange = { input = it },
-                                modifier = Modifier.weight(1f),
-                                placeholder = {
-                                    Text("Message TODO…")
-                                },
-                                maxLines = 5
-                            )
-
-                            Spacer(Modifier.width(8.dp))
-
-                            Button(
-                                enabled =
-                                    input.trim().isNotEmpty() &&
-                                    modelReady &&
-                                    !thinking,
-
-                                onClick = {
-                                    val question = input.trim()
-
-                                    if (question.isEmpty())
-                                        return@Button
-
-                                    val updatedMessages =
-                                        messages + Message(
+                                        askAI(
                                             question,
-                                            true
-                                        )
+                                            userMessages
+                                        ) { answer ->
 
-                                    input = ""
-                                    messages = updatedMessages
-                                    thinking = true
-
-                                    val chatId =
-                                        currentChatId
-                                            ?: System.currentTimeMillis()
-
-                                    currentChatId = chatId
-
-                                    val title =
-                                        question
-                                            .replace("\n", " ")
-                                            .trim()
-                                            .take(32)
-                                            .ifEmpty {
-                                                "New Chat"
-                                            }
-
-                                    askAI(
-                                        question,
-                                        updatedMessages
-                                    ) { answer ->
-
-                                        val finalMessages =
-                                            updatedMessages +
+                                            val finalMessages =
+                                                userMessages +
                                                     Message(
                                                         answer,
                                                         false
                                                     )
 
-                                        messages = finalMessages
-                                        thinking = false
+                                            messages = finalMessages
+                                            thinking = false
 
-                                        val updatedChats =
-                                            if (chats.any {
-                                                    it.id == chatId
-                                                }) {
-                                                chats.map {
-                                                    if (it.id == chatId) {
-                                                        ChatItem(
-                                                            chatId,
-                                                            title,
-                                                            finalMessages
-                                                        )
-                                                    } else {
-                                                        it
+                                            val updatedChats =
+                                                if (
+                                                    chats.any {
+                                                        it.id == chatId
                                                     }
-                                                }
-                                            } else {
-                                                chats +
+                                                ) {
+                                                    chats.map {
+                                                        if (
+                                                            it.id == chatId
+                                                        ) {
+                                                            ChatItem(
+                                                                chatId,
+                                                                title,
+                                                                finalMessages
+                                                            )
+                                                        } else {
+                                                            it
+                                                        }
+                                                    }
+                                                } else {
+                                                    chats +
                                                         ChatItem(
                                                             chatId,
                                                             title,
                                                             finalMessages
                                                         )
-                                            }
+                                                }
 
-                                        chats = updatedChats
-                                        saveChats(updatedChats)
+                                            chats = updatedChats
+                                            saveChats(updatedChats)
+                                        }
+                                    }
+                                ) {
+                                    Text("Send")
+                                }
+                            }
+                        }
+                    }
+                ) { padding ->
+
+                    Column(
+                        modifier =
+                            Modifier
+                                .fillMaxSize()
+                                .padding(padding)
+                    ) {
+
+                        if (!modelReady) {
+
+                            Card(
+                                modifier =
+                                    Modifier
+                                        .fillMaxWidth()
+                                        .padding(
+                                            horizontal = 12.dp,
+                                            vertical = 8.dp
+                                        )
+                            ) {
+
+                                Column(
+                                    Modifier.padding(16.dp)
+                                ) {
+
+                                    Text(
+                                        "Local AI Model",
+                                        fontWeight =
+                                            FontWeight.Bold
+                                    )
+
+                                    Spacer(
+                                        Modifier.height(4.dp)
+                                    )
+
+                                    Text(
+                                        "AI use karne ke liye compatible .task model install karo."
+                                    )
+
+                                    Spacer(
+                                        Modifier.height(10.dp)
+                                    )
+
+                                    Button(
+                                        onClick = {
+                                            modelPicker.launch(
+                                                arrayOf(
+                                                    "application/octet-stream",
+                                                    "*/*"
+                                                )
+                                            )
+                                        }
+                                    ) {
+                                        Text("Install Model")
                                     }
                                 }
-                            ) {
-                                Text("Send")
+                            }
+                        }
+
+                        if (modelError.isNotEmpty()) {
+
+                            Text(
+                                modelError,
+                                modifier =
+                                    Modifier.padding(
+                                        horizontal = 16.dp
+                                    ),
+                                color =
+                                    MaterialTheme
+                                        .colorScheme
+                                        .error,
+                                fontSize = 12.sp
+                            )
+                        }
+
+                        LazyColumn(
+                            state = listState,
+                            modifier =
+                                Modifier
+                                    .fillMaxWidth()
+                                    .weight(1f),
+
+                            contentPadding =
+                                PaddingValues(
+                                    horizontal = 14.dp,
+                                    vertical = 14.dp
+                                ),
+
+                            verticalArrangement =
+                                Arrangement.spacedBy(12.dp)
+                        ) {
+
+                            items(messages) { message ->
+
+                                MessageBubble(
+                                    message = message,
+                                    onCopy = {
+
+                                        val clipboard =
+                                            context.getSystemService(
+                                                Context.CLIPBOARD_SERVICE
+                                            ) as ClipboardManager
+
+                                        clipboard.setPrimaryClip(
+                                            ClipData.newPlainText(
+                                                "TODO",
+                                                message.text
+                                            )
+                                        )
+                                    }
+                                )
+                            }
+
+                            if (thinking) {
+
+                                item {
+
+                                    Row(
+                                        modifier =
+                                            Modifier.fillMaxWidth(),
+
+                                        horizontalArrangement =
+                                            Arrangement.Start
+                                    ) {
+
+                                        Surface(
+                                            shape =
+                                                RoundedCornerShape(
+                                                    18.dp
+                                                ),
+
+                                            color =
+                                                MaterialTheme
+                                                    .colorScheme
+                                                    .surfaceVariant
+                                        ) {
+
+                                            Text(
+                                                "TODO is thinking…",
+                                                modifier =
+                                                    Modifier.padding(
+                                                        horizontal = 16.dp,
+                                                        vertical = 12.dp
+                                                    )
+                                            )
+                                        }
+                                    }
+                                }
                             }
                         }
                     }
                 }
             }
         }
-        }
+    }
 
+    @Composable
+    private fun MessageBubble(
+        message: Message,
+        onCopy: () -> Unit
+    ) {
+
+        Row(
+            modifier =
+                Modifier.fillMaxWidth(),
+
+            horizontalArrangement =
+                if (message.fromUser)
+                    Arrangement.End
+                else
+                    Arrangement.Start
+        ) {
+
+            Surface(
+                modifier =
+                    Modifier.widthIn(
+                        max = 340.dp
+                    ),
+
+                shape =
+                    RoundedCornerShape(
+                        topStart = 20.dp,
+                        topEnd = 20.dp,
+
+                        bottomStart =
+                            if (message.fromUser)
+                                20.dp
+                            else
+                                5.dp,
+
+                        bottomEnd =
+                            if (message.fromUser)
+                                5.dp
+                            else
+                                20.dp
+                    ),
+
+                color =
+                    if (message.fromUser)
+                        MaterialTheme
+                            .colorScheme
+                            .primaryContainer
+                    else
+                        MaterialTheme
+                            .colorScheme
+                            .surfaceVariant
+
+            ) {
+
+                Column(
+                    Modifier.padding(14.dp)
+                ) {
+
+                    Row(
+                        verticalAlignment =
+                            Alignment.CenterVertically
+                    ) {
+
+                        Text(
+                            if (message.fromUser)
+                                "You"
+                            else
+                                "TODO • AI",
+
+                            fontSize = 11.sp,
+
+                            fontWeight =
+                                FontWeight.Bold
+                        )
+
+                        if (!message.fromUser) {
+
+                            Spacer(
+                                Modifier.weight(1f)
+                            )
+
+                            TextButton(
+                                onClick = onCopy
+                            ) {
+                                Text(
+                                    "Copy",
+                                    fontSize = 11.sp
+                                )
+                            }
+                        }
+                    }
+
+                    Spacer(
+                        Modifier.height(5.dp)
+                    )
+
+                    Text(
+                        text = message.text,
+                        fontSize = 16.sp,
+                        lineHeight = 23.sp
+                    )
+                }
+            }
+        }
     }
 
     override fun onDestroy() {
+
         session?.close()
         session = null
 
@@ -901,4 +1025,4 @@ val scope = rememberCoroutineScope()
 
         super.onDestroy()
     }
-}
+                    }
